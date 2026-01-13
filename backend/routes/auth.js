@@ -20,20 +20,24 @@ passport.use(new SteamStrategy({
             const profileUrl = profile._json.profileurl;
 
             // Upsert user
-            const result = await db.query(`
-        INSERT INTO users (steam_id, username, avatar_url, profile_url)
-        VALUES ($1, $2, $3, $4)
-        ON CONFLICT (steam_id) 
-        DO UPDATE SET 
-          username = EXCLUDED.username,
-          avatar_url = EXCLUDED.avatar_url,
-          profile_url = EXCLUDED.profile_url,
-          updated_at = CURRENT_TIMESTAMP
-        RETURNING *
-      `, [steamId, username, avatarUrl, profileUrl]);
+            // Upsert user (SQLite compatible)
+            // First try to insert or ignore
+            await db.run(`
+                INSERT INTO users (steam_id, username, avatar_url, profile_url)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT(steam_id) DO UPDATE SET
+                    username = excluded.username,
+                    avatar_url = excluded.avatar_url,
+                    profile_url = excluded.profile_url,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [steamId, username, avatarUrl, profileUrl]);
 
-            return done(null, result.rows[0]);
+            // Then fetch the user
+            const user = await db.getOne('SELECT * FROM users WHERE steam_id = $1', [steamId]);
+
+            return done(null, user);
         } catch (error) {
+            console.error('Steam Auth Error:', error);
             return done(error, null);
         }
     }
